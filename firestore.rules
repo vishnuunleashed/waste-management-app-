@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /councils/{councilId} {
+      allow read: if request.auth != null;
+      // No backend/Cloud Functions yet to gate writes more tightly than
+      // "any authenticated (incl. anonymous) device" — accepted MVP
+      // tradeoff, flagged as a hardening follow-up.
+      allow write: if request.auth != null;
+
+      match /schedule/{scheduleId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+
+      match /corrections/{correctionId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.reportedBy == request.auth.uid;
+        // The only permitted update is the "second independent report"
+        // consensus flip: a different device may move an existing pending
+        // correction to applied, and may only touch the status field —
+        // nothing else about another user's report can be edited.
+        allow update: if request.auth != null
+          && resource.data.status == 'pending'
+          && resource.data.reportedBy != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'applied';
+        allow delete: if false;
+      }
+    }
+
+    match /devices/{deviceId} {
+      // Links a durable per-device ID (ANDROID_ID / Keychain-stored ID —
+      // see DeviceIdentityService) to whichever anonymous uid is currently
+      // signed in on that device. No backend/Cloud Functions yet to verify
+      // the hardware binding more tightly than "any authenticated device
+      // can claim any deviceId" — same accepted MVP tradeoff as the
+      // councils write rule above; hardening (App Check or a Cloud
+      // Function) is a follow-up, not a blocker.
+      allow read, write: if request.auth != null;
+
+      match /scanHistory/{scanId} {
+        // Private per-device history — only the uid currently linked to
+        // this deviceId may read or write its own scans.
+        allow read, create: if request.auth != null
+          && get(/databases/$(database)/documents/devices/$(deviceId)).data.currentUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
