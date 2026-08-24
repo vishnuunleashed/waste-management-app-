@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../common/theme_notifier.dart';
-import '../../riverpod/offline/offline_settings_notifier.dart';
 import '../../riverpod/onboarding/onboarding_notifier.dart';
 import 'change_council_screen.dart';
 
@@ -14,7 +13,6 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeProvider);
     final council = ref.watch(onboardingProvider).selectedCouncil.name;
-    final offline = ref.watch(offlineSettingsProvider);
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -37,20 +35,6 @@ class SettingsScreen extends ConsumerWidget {
             activeColor: AppTheme.primaryEmerald,
             title: Text('Dark theme', style: Theme.of(context).textTheme.bodyLarge),
             secondary: const Icon(Icons.dark_mode_rounded, color: AppTheme.accentMint),
-          ),
-          const SizedBox(height: 12),
-          _SectionLabel('Offline Scanning'),
-          SwitchListTile.adaptive(
-            value: offline.enabled,
-            onChanged: (value) => ref.read(offlineSettingsProvider.notifier).setEnabled(value),
-            activeColor: AppTheme.primaryEmerald,
-            title: Text('Enable offline scanning', style: Theme.of(context).textTheme.bodyLarge),
-            subtitle: Text(
-              'Scan items without an internet connection using a small on-device classifier '
-              '(built into the app — no download needed).',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            secondary: const Icon(Icons.wifi_off_rounded, color: AppTheme.accentMint),
           ),
         ],
       ),

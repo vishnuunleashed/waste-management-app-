@@ -7,7 +7,6 @@ import '../../domain/entities/waste_item.dart';
 import '../../domain/repositories/waste_repository.dart';
 import '../datasources/local/council_rules_datasource.dart';
 import '../datasources/local/local_vision_datasource.dart';
-import '../datasources/local/offline_prefs_datasource.dart';
 import '../datasources/remote/openrouter_vision_datasource.dart';
 
 const _tag = 'WasteRepository';
@@ -17,14 +16,12 @@ class WasteRepositoryImpl implements WasteRepository {
   final LocalVisionDataSource localVisionDataSource;
   final CouncilRulesDataSource localCouncilRulesDataSource;
   final ConnectivityService connectivityService;
-  final OfflinePrefsDataSource offlinePrefsDataSource;
 
   WasteRepositoryImpl({
     required this.remoteVisionDataSource,
     required this.localVisionDataSource,
     required this.localCouncilRulesDataSource,
     required this.connectivityService,
-    required this.offlinePrefsDataSource,
   });
 
   @override
@@ -34,9 +31,7 @@ class WasteRepositoryImpl implements WasteRepository {
   }) async {
     try {
       final isOnline = await connectivityService.hasConnectivity();
-      final offlineEnabled = await offlinePrefsDataSource.isOfflineScanEnabled();
-      AppLogger.info(
-          _tag, 'classifyWasteImage — online=$isOnline offlineEnabled=$offlineEnabled');
+      AppLogger.info(_tag, 'classifyWasteImage — online=$isOnline');
 
       RawVisionAnalysis rawAnalysis;
       ClassificationSource source;
@@ -47,20 +42,12 @@ class WasteRepositoryImpl implements WasteRepository {
           rawAnalysis = await remoteVisionDataSource.analyzeImage(imagePath);
           source = ClassificationSource.cloud;
         } catch (e) {
-          AppLogger.error(_tag, 'Cloud classification failed, falling back to local if available', e);
-          if (!offlineEnabled) rethrow;
-          AppLogger.info(_tag, 'Falling back to on-device classification...');
+          AppLogger.error(
+              _tag, 'Cloud classification failed, falling back to on-device classification', e);
           rawAnalysis = await localVisionDataSource.analyzeImage(imagePath);
           source = ClassificationSource.local;
         }
       } else {
-        if (!offlineEnabled) {
-          AppLogger.error(_tag, 'Offline and offline scanning is disabled — cannot classify');
-          return const Left(ServerFailure(
-            'No internet connection. Enable offline scanning in Settings to scan without '
-            'connectivity.',
-          ));
-        }
         AppLogger.info(_tag, 'Offline — using on-device classification...');
         rawAnalysis = await localVisionDataSource.analyzeImage(imagePath);
         source = ClassificationSource.local;

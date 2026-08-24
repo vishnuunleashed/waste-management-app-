@@ -18,7 +18,6 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final council = ref.watch(onboardingProvider).selectedCouncil.name;
-    final recentScans = ref.watch(recentScansProvider);
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -104,50 +103,80 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
 
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-                child: Text(
-                  'Recent Scans',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                child: Text(
-                  _historySubtitle(recentScans.valueOrNull),
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: recentScans.when(
-                  data: (scans) => scans.isEmpty
-                      ? const _EmptyHistoryCard()
-                      : Column(
-                          children: [
-                            for (final scan in scans)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _ScanHistoryTile(scan: scan),
-                              ),
-                          ],
-                        ),
-                  loading: () => const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                  error: (error, __) => _HistoryErrorCard(error: error),
-                ),
-              ),
-            ),
+            const _RecentScansSection(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Watches [recentScansProvider] itself, scoped to just this section — a
+/// new Firestore snapshot only rebuilds the "Recent Scans" title/subtitle
+/// list, not the council header, scan CTA, or quick-link tiles above it.
+class _RecentScansSection extends ConsumerWidget {
+  const _RecentScansSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recentScans = ref.watch(recentScansProvider);
+
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+            child: Text(
+              'Recent Scans',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text(
+              _historySubtitle(recentScans.valueOrNull),
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+        ),
+        recentScans.when(
+          // Lazily built/disposed as the user scrolls, instead of the
+          // previous eager Column that built every tile up front.
+          data: (scans) => scans.isEmpty
+              ? const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: _EmptyHistoryCard(),
+                  ),
+                )
+              : SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _ScanHistoryTile(scan: scans[index]),
+                      ),
+                      childCount: scans.length,
+                    ),
+                  ),
+                ),
+          loading: () => const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+          error: (error, __) => SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: _HistoryErrorCard(error: error),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

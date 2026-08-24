@@ -99,13 +99,30 @@ class _ProcessingScreenState extends ConsumerState<ProcessingScreen>
                       child: Stack(
                         children: [
                           Positioned.fill(
-                            child: Image.file(
-                              File(widget.imagePath),
-                              fit: BoxFit.cover,
+                            child: Builder(
+                              builder: (context) {
+                                // Decode at display resolution, not full camera
+                                // resolution — this box is only 260x320 logical
+                                // pixels, so decoding the source photo at native
+                                // (often 12MP+) resolution just to downscale it
+                                // for paint wastes real CPU/memory on every scan.
+                                final dpr = MediaQuery.of(context).devicePixelRatio;
+                                return Image.file(
+                                  File(widget.imagePath),
+                                  fit: BoxFit.cover,
+                                  cacheWidth: (260 * dpr).round(),
+                                  cacheHeight: (320 * dpr).round(),
+                                );
+                              },
                             ),
                           ),
 
-                          // Scanning Beam Line
+                          // Scanning Beam Line — the moving bar itself is
+                          // wrapped in its own RepaintBoundary (nested inside
+                          // Positioned, which must stay Stack's direct child)
+                          // so its ~60fps animation doesn't force the static
+                          // photo above to re-rasterize every frame for the
+                          // whole duration of the scan.
                           AnimatedBuilder(
                             animation: _scanController,
                             builder: (context, child) {
@@ -113,21 +130,24 @@ class _ProcessingScreenState extends ConsumerState<ProcessingScreen>
                                 top: _scanController.value * 280,
                                 left: 0,
                                 right: 0,
-                                child: Container(
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.accentMint,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppTheme.primaryEmerald.withOpacity(0.9),
-                                        blurRadius: 12,
-                                        spreadRadius: 4,
-                                      )
-                                    ],
-                                  ),
-                                ),
+                                child: child!,
                               );
                             },
+                            child: RepaintBoundary(
+                              child: Container(
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accentMint,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primaryEmerald.withOpacity(0.9),
+                                      blurRadius: 12,
+                                      spreadRadius: 4,
+                                    )
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),

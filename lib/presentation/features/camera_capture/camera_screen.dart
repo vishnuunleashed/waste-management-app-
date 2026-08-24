@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/device_capability_service.dart';
 import '../../riverpod/camera/camera_notifier.dart';
 import '../../riverpod/camera/camera_state.dart';
 import '../processing/processing_screen.dart';
@@ -47,9 +46,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cameraState = ref.watch(cameraProvider);
-    final notifier = ref.read(cameraProvider.notifier);
-
     return Scaffold(
       // Camera viewfinder chrome intentionally stays dark regardless of
       // app theme, matching standard camera-UI convention (native camera
@@ -77,20 +73,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                         onPressed: () => Navigator.of(context).maybePop(),
                       ),
                     ),
-                    _buildHeaderBadge(cameraState.deviceCapability),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          cameraState.isFlashOn ? Icons.flash_on : Icons.flash_off,
-                          color: cameraState.isFlashOn ? Colors.amber : Colors.white70,
-                        ),
-                        onPressed: () => notifier.toggleFlash(),
-                      ),
-                    ),
+                    const _HeaderBadge(),
+                    const _FlashButton(),
                   ],
                 ),
               ),
@@ -101,16 +85,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
               hasScrollBody: false,
               child: Stack(
                 children: [
-                  Positioned.fill(
-                    child: (cameraState.isReady && cameraState.controller != null)
-                        ? RepaintBoundary(
-                            child: AspectRatio(
-                              aspectRatio: cameraState.controller!.value.aspectRatio,
-                              child: CameraPreview(cameraState.controller!),
-                            ),
-                          )
-                        : _buildCameraFallback(context, cameraState),
-                  ),
+                  const Positioned.fill(child: _Viewfinder()),
 
                   // Framing Target Guide Overlay
                   Positioned.fill(
@@ -149,44 +124,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                             tooltip: 'Pick from Gallery',
                             onPressed: _pickImageFromGallery,
                           ),
-                          GestureDetector(
-                            onTap: cameraState.isCapturing
-                                ? null
-                                : () async {
-                                    final path = await notifier.capturePhoto();
-                                    if (path != null && mounted) {
-                                      _navigateToProcessing(path);
-                                    }
-                                  },
-                            child: Container(
-                              width: 72,
-                              height: 72,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppTheme.primaryEmerald,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppTheme.primaryEmerald.withAlpha(120),
-                                    blurRadius: 16,
-                                    spreadRadius: 2,
-                                  )
-                                ],
-                              ),
-                              child: cameraState.isCapturing
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(20.0),
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 3,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.camera_alt_rounded,
-                                      color: Colors.white,
-                                      size: 36,
-                                    ),
-                            ),
-                          ),
+                          _CaptureButton(onCaptured: _navigateToProcessing),
                           const SizedBox(width: 48),
                         ],
                       ),
@@ -200,8 +138,21 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       ),
     );
   }
+}
 
-  Widget _buildHeaderBadge(DeviceCapability? capability) {
+/// Watches only [CameraState.deviceCapability] — set once during camera
+/// init and essentially never changes again, so isolating it here means
+/// this badge never rebuilds for capture/flash toggles.
+class _HeaderBadge extends ConsumerWidget {
+  const _HeaderBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Only used to gate the badge's presence today, but selecting it keeps
+    // this widget decoupled from unrelated CameraState fields even if the
+    // badge grows to show real capability info later.
+    ref.watch(cameraProvider.select((s) => s.deviceCapability));
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
@@ -229,8 +180,137 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       ),
     );
   }
+}
 
-  Widget _buildCameraFallback(BuildContext context, CameraState state) {
+/// Watches only [CameraState.isFlashOn] — toggling flash no longer rebuilds
+/// the viewfinder, capture button, or header.
+class _FlashButton extends ConsumerWidget {
+  const _FlashButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFlashOn = ref.watch(cameraProvider.select((s) => s.isFlashOn));
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: IconButton(
+        icon: Icon(
+          isFlashOn ? Icons.flash_on : Icons.flash_off,
+          color: isFlashOn ? Colors.amber : Colors.white70,
+        ),
+        onPressed: () => ref.read(cameraProvider.notifier).toggleFlash(),
+      ),
+    );
+  }
+}
+
+/// Watches only `(isReady, controller, errorMessage)` — the capture button
+/// toggling `isCapturing` no longer rebuilds the preview.
+class _Viewfinder extends ConsumerWidget {
+  const _Viewfinder();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isReady = ref.watch(cameraProvider.select((s) => s.isReady));
+    final controller = ref.watch(cameraProvider.select((s) => s.controller));
+
+    if (isReady && controller != null) {
+      return RepaintBoundary(
+        child: AspectRatio(
+          aspectRatio: controller.value.aspectRatio,
+          child: CameraPreview(controller),
+        ),
+      );
+    }
+    return _CameraFallback(
+      errorMessage: ref.watch(cameraProvider.select((s) => s.errorMessage)),
+      onPickFromGallery: () => _pickImageFromGallery(context),
+    );
+  }
+
+  static Future<void> _pickImageFromGallery(BuildContext context) async {
+    try {
+      final selectedFile =
+          await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (selectedFile != null && context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ProcessingScreen(imagePath: selectedFile.path)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gallery pick error: $e')),
+        );
+      }
+    }
+  }
+}
+
+/// Watches only [CameraState.isCapturing] — the single most latency-critical
+/// flag in the app (toggles on every tap-to-capture) — so tapping the
+/// shutter only rebuilds this small button, not the header, viewfinder, or
+/// framing guide.
+class _CaptureButton extends ConsumerWidget {
+  final ValueChanged<String> onCaptured;
+
+  const _CaptureButton({required this.onCaptured});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isCapturing = ref.watch(cameraProvider.select((s) => s.isCapturing));
+    final notifier = ref.read(cameraProvider.notifier);
+
+    return GestureDetector(
+      onTap: isCapturing
+          ? null
+          : () async {
+              final path = await notifier.capturePhoto();
+              if (path != null) onCaptured(path);
+            },
+      child: Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppTheme.primaryEmerald,
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primaryEmerald.withAlpha(120),
+              blurRadius: 16,
+              spreadRadius: 2,
+            )
+          ],
+        ),
+        child: isCapturing
+            ? const Padding(
+                padding: EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                ),
+              )
+            : const Icon(
+                Icons.camera_alt_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
+      ),
+    );
+  }
+}
+
+class _CameraFallback extends StatelessWidget {
+  final String? errorMessage;
+  final VoidCallback onPickFromGallery;
+
+  const _CameraFallback({required this.errorMessage, required this.onPickFromGallery});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: context.colors.background,
       child: Center(
@@ -251,13 +331,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                state.errorMessage ?? 'Position waste item inside frame',
+                errorMessage ?? 'Position waste item inside frame',
                 style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 28),
               ElevatedButton.icon(
-                onPressed: _pickImageFromGallery,
+                onPressed: onPickFromGallery,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: context.colors.surfaceCard,
                   foregroundColor: AppTheme.accentMint,
@@ -273,7 +353,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       ),
     );
   }
-
 }
 
 class _FramingGuidePainter extends CustomPainter {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -64,7 +65,14 @@ class DeviceIdentityServiceImpl implements DeviceIdentityService {
     final uid = await _ensureSignedIn();
     final deviceId = await _resolvePersistentId();
     _cachedDeviceId = deviceId;
-    await _upsertDeviceDoc(deviceId, uid);
+    // Deliberately not awaited: this is a network round-trip to Firestore,
+    // and ensureDeviceId() is awaited in main() before runApp() — awaiting
+    // it here would leave the entire app stuck on a blank screen while
+    // offline, since Firestore retries a read/write for a long time before
+    // giving up rather than failing fast. The device is fully usable
+    // offline from its locally-resolved ID alone; this sync is best-effort
+    // and safe to let finish (or fail) in the background.
+    unawaited(_upsertDeviceDoc(deviceId, uid));
     return deviceId;
   }
 

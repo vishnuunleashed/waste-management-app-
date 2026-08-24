@@ -1,7 +1,6 @@
 import 'package:get_it/get_it.dart';
 import '../../data/datasources/local/council_rules_datasource.dart';
 import '../../data/datasources/local/local_vision_datasource.dart';
-import '../../data/datasources/local/offline_prefs_datasource.dart';
 import '../../data/datasources/local/onboarding_prefs_datasource.dart';
 import '../../data/datasources/local/pending_scan_queue_datasource.dart';
 import '../../data/datasources/local/schedule_local_cache_datasource.dart';
@@ -61,9 +60,6 @@ Future<void> setupServiceLocator() async {
   sl.registerLazySingleton<LocalVisionDataSource>(
     () => LocalVisionDataSourceImpl(),
   );
-  sl.registerLazySingleton<OfflinePrefsDataSource>(
-    () => OfflinePrefsDataSourceImpl(),
-  );
   sl.registerLazySingleton<PendingScanQueueDataSource>(
     () => PendingScanQueueDataSourceImpl(),
   );
@@ -75,7 +71,6 @@ Future<void> setupServiceLocator() async {
       localVisionDataSource: sl(),
       localCouncilRulesDataSource: sl(),
       connectivityService: sl(),
-      offlinePrefsDataSource: sl(),
     ),
   );
   sl.registerLazySingleton<CouncilScheduleRepository>(
